@@ -104,6 +104,9 @@
         <div id="chip-bar" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
       </div>
 
+      <label>Provisional Diagnosis <span style="color:#5a8a9f;font-weight:400;text-transform:none;letter-spacing:0">(auto-filled from formula)</span></label>
+      <input id="f_diagnosis" type="text" placeholder="e.g. Acne Vulgaris">
+
       <label>Instructions</label>
       <input id="f_instructions" type="text" value="Use 1-2 pumps at night as directed">
 
@@ -158,7 +161,7 @@ function parsePaste() {
       if (/date of compounding/i.test(p))  compound_date = p.replace(/date of compounding:/i,'').trim();
       else if (/expiry date/i.test(p))      expiry        = p.replace(/expiry date:/i,'').trim();
     }
-    prescriptions.push({ name, age, formula, instructions, compound_date, expiry, id: Date.now()+Math.random() });
+    prescriptions.push({ name, age, formula, instructions, compound_date, expiry, diagnosis: getDiagnosisFromFormula(formula), id: Date.now()+Math.random() });
     added++;
   });
   document.getElementById('pasteInput').value = '';
@@ -223,22 +226,36 @@ function adjConc(idx, delta) {
   renderChips();
 }
 
+// sync chips + diagnosis when user types manually
+document.addEventListener('DOMContentLoaded', () => {
+  initDates();
+  document.getElementById('f_formula').addEventListener('input', function() {
+    chipIngredients = parseIngredients(this.value);
+    renderChips();
+    const diag = getDiagnosisFromFormula(this.value);
+    document.getElementById('f_diagnosis').value = diag;
+  });
+});
+
+function getDiagnosisFromFormula(formula) {
+  const f = formula.toLowerCase();
+  const hasTCS = /spironolactone/.test(f) || (/clindamycin/.test(f) && /tretinoin/.test(f));
+  const hasTAAN = /tretinoin/.test(f) && /niacinamide/.test(f) && /azelaic/.test(f) && !hasTCS;
+  const hasMelasma = /hydroquinone/.test(f) || /tranexamic/.test(f) || /kojic/.test(f);
+  if (hasMelasma) return 'Melasma';
+  if (hasTCS) return 'Hormonal Acne';
+  if (hasTAAN) return 'Acne Vulgaris';
+  return '';
+}
+
 function applyTemplate() {
   const val = document.getElementById('f_template').value;
   if (!val) return;
   document.getElementById('f_formula').value = val;
   chipIngredients = parseIngredients(val);
   renderChips();
+  document.getElementById('f_diagnosis').value = getDiagnosisFromFormula(val);
 }
-
-// sync chips when user types manually
-document.addEventListener('DOMContentLoaded', () => {
-  initDates();
-  document.getElementById('f_formula').addEventListener('input', function() {
-    chipIngredients = parseIngredients(this.value);
-    renderChips();
-  });
-});
 
 function addRow() {
   const name          = document.getElementById('f_name').value.trim();
@@ -247,12 +264,14 @@ function addRow() {
   const instructions  = document.getElementById('f_instructions').value.trim();
   const compound_date = document.getElementById('f_compound_date').value.trim();
   const expiry        = document.getElementById('f_expiry').value.trim();
+  const diagnosis     = document.getElementById('f_diagnosis').value.trim();
   if (!name || !formula) { alert('Patient name and formula are required.'); return; }
-  prescriptions.push({ name, age, formula, instructions, compound_date, expiry, id: Date.now() });
+  prescriptions.push({ name, age, formula, instructions, compound_date, expiry, diagnosis, id: Date.now() });
   document.getElementById('f_name').value = '';
   document.getElementById('f_age').value = '';
   document.getElementById('f_formula').value = '';
   document.getElementById('f_template').value = '';
+  document.getElementById('f_diagnosis').value = '';
   document.getElementById('chip-bar').innerHTML = '';
   chipIngredients = [];
   renderTable();
@@ -269,12 +288,13 @@ function renderTable() {
     wrap.innerHTML = '<div class="empty-state">No prescriptions yet.</div>';
     return;
   }
-  let html = '<table><thead><tr><th>#</th><th>Patient</th><th>Formula</th><th>Compounded</th><th>Expiry</th><th></th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>#</th><th>Patient</th><th>Formula</th><th>Diagnosis</th><th>Compounded</th><th>Expiry</th><th></th></tr></thead><tbody>';
   prescriptions.forEach((p,i) => {
     html += `<tr>
       <td><span class="badge">${i+1}</span></td>
       <td><strong>${p.name}</strong>${p.age?' <span style="color:#5a8a9f;font-size:11px">'+p.age+'</span>':''}</td>
-      <td style="max-width:220px;font-size:12px">${p.formula}</td>
+      <td style="max-width:200px;font-size:12px">${p.formula}</td>
+      <td style="font-size:12px">${p.diagnosis||'—'}</td>
       <td style="font-size:12px">${p.compound_date||'—'}</td>
       <td style="font-size:12px">${p.expiry||'—'}</td>
       <td style="white-space:nowrap;display:flex;gap:8px;align-items:center">
@@ -297,6 +317,8 @@ function buildPDF(p) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:'mm', format:'a4' });
   const W = 210, H = 297;
+  const LEFT_W = W * 0.75;   // 157.5mm
+  const RIGHT_X = LEFT_W;    // 157.5mm
 
   // ── HEADER BAR ──
   doc.setFillColor(5,70,96);
@@ -304,26 +326,26 @@ function buildPDF(p) {
   doc.setFillColor(191,230,255);
   doc.rect(0, 31.5, W, 1.5, 'F');
 
-  // LEFT: logo image only, then address below
-  try { doc.addImage(LOGO_B64, 'PNG', 10, 4, 42, 14); } catch(e){}
-  doc.setFontSize(7); doc.setFont('helvetica','normal');
-  doc.setTextColor(191,230,255);
-  doc.text('No. 181, K.B.A.R Road, Austin Town, Bengaluru – 560047', 10, 23);
-  doc.text('Tel: 6363991580  |  formial.in', 10, 28);
-
-  // Thin vertical divider
-  doc.setDrawColor(191,230,255);
-  doc.setLineWidth(0.3);
-  doc.line(W/2, 4, W/2, 29);
-
-  // RIGHT: Dr Neha details, vertically centred
-  doc.setTextColor(255,255,255);
-  doc.setFontSize(12); doc.setFont('helvetica','bold');
-  doc.text('DR. NEHA FOGLA', W/2 + 6, 12);
+  // LEFT 75%: logo + address
+  try { doc.addImage(LOGO_B64, 'PNG', 10, 4, 48, 16); } catch(e){}
   doc.setFontSize(7.5); doc.setFont('helvetica','normal');
   doc.setTextColor(191,230,255);
-  doc.text('MBBS MD (DERM)', W/2 + 6, 19);
-  doc.text('MMC Reg. No. 2021054683', W/2 + 6, 25);
+  doc.text('No. 181, K.B.A.R Road, Austin Town, Bengaluru – 560047', 10, 24);
+  doc.text('Tel: 6363991580  |  formial.in', 10, 29);
+
+  // Vertical divider at 75%
+  doc.setDrawColor(191,230,255);
+  doc.setLineWidth(0.3);
+  doc.line(RIGHT_X, 4, RIGHT_X, 29);
+
+  // RIGHT 25%: Dr Neha — fit tightly in 52mm
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.text('DR. NEHA FOGLA', RIGHT_X + 4, 11);
+  doc.setFontSize(7); doc.setFont('helvetica','normal');
+  doc.setTextColor(191,230,255);
+  doc.text('MBBS MD (DERM)', RIGHT_X + 4, 17);
+  doc.text('MMC Reg. 2021054683', RIGHT_X + 4, 22);
 
   // ── PATIENT INFO ──
   let y = 44;
@@ -336,6 +358,15 @@ function buildPDF(p) {
   doc.text('Date:', 150, y);
   doc.setFont('helvetica','bold'); doc.setTextColor(26,26,26);
   doc.text(p.compound_date || '', 163, y);
+
+  // Provisional diagnosis line
+  if (p.diagnosis) {
+    y += 8;
+    doc.setFontSize(9.5); doc.setFont('helvetica','normal'); doc.setTextColor(26,26,26);
+    doc.text('Provisional Diagnosis:', 14, y);
+    doc.setFont('helvetica','bold');
+    doc.text(p.diagnosis, 60, y);
+  }
 
   doc.setDrawColor(191,230,255);
   doc.setLineWidth(0.4);
@@ -357,8 +388,16 @@ function buildPDF(p) {
   doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
   doc.text('Sig: ' + (p.instructions || ''), 18, y);
 
+  // ── VALIDITY NOTE ──
+  const noteY = H - 80;
+  doc.setDrawColor(191,230,255);
+  doc.setLineWidth(0.4);
+  doc.line(14, noteY, 196, noteY);
+  doc.setFontSize(8); doc.setFont('helvetica','italic'); doc.setTextColor(90,138,159);
+  doc.text('The e-prescription is valid for two weeks from the date of issue.', 14, noteY + 6);
+
   // ── SIGNATURE ──
-  const sigY = H - 65;
+  const sigY = H - 68;
   try { doc.addImage(SIG_B64, 'PNG', 14, sigY, 65, 24); } catch(e){}
 
   // ── FOOTER ──
