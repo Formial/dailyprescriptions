@@ -41,6 +41,13 @@
   .paste-hint{font-size:11px;color:#5a8a9f;margin-top:6px}
   .section-divider{display:flex;align-items:center;gap:10px;margin:10px 0 16px;color:#5a8a9f;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
   .section-divider::before,.section-divider::after{content:'';flex:1;height:1px;background:#BFE6FF}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:#e8f4fb;border:1.5px solid #BFE6FF;border-radius:20px;padding:4px 10px;font-size:12px;color:#054660;font-weight:500}
+  .chip-name{font-weight:600}
+  .chip-ctrl{display:inline-flex;align-items:center;gap:2px}
+  .chip-btn{background:#054660;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-weight:700}
+  .chip-btn:hover{background:#0a6a9a}
+  .chip-val{min-width:36px;text-align:center;font-weight:700;font-size:12px;color:#054660}
+  select{width:100%;padding:9px 12px;border:1.5px solid #BFE6FF;border-radius:6px;font-family:'Inter',Arial,sans-serif;font-size:13px;color:#1a1a1a;background:#f0f7fc;outline:none}
 </style>
 </head>
 <body>
@@ -76,18 +83,38 @@
           <input id="f_age" type="text" placeholder="e.g. 30Y">
         </div>
       </div>
-      <label>Formula / Rx</label>
-      <input id="f_formula" type="text" placeholder="e.g. Tretinoin 0.015% + Niacinamide 4% + Azelaic acid 4%">
+
+      <label>Formula Template</label>
+      <select id="f_template" onchange="applyTemplate()">
+        <option value="">— Select a formula —</option>
+        <option value="Tretinoin 0.025% + Spironolactone 5% + Clindamycin 1%">Tretinoin + Spironolactone 5% + Clindamycin 1%</option>
+        <option value="Tretinoin 0.025% + Niacinamide 4% + Azelaic Acid 4%">Tretinoin + Niacinamide 4% + Azelaic Acid 4%</option>
+        <option value="Tretinoin 0.025% + Azelaic Acid 4% + Kojic Acid 2% + Tranexamic Acid 5%">Tretinoin + Azelaic Acid 4% + Kojic Acid 2% + Tranexamic Acid 5%</option>
+        <option value="Tretinoin 0.025% + Hydroquinone 4% + Kojic Acid 2%">Tretinoin + Hydroquinone 4% + Kojic Acid 2%</option>
+        <option value="Hyaluronic Acid 1% + Niacinamide 4% + Azelaic Acid 10%">Hyaluronic Acid 1% + Niacinamide 4% + Azelaic Acid 10%</option>
+        <option value="Tretinoin 0.025% + Niacinamide 4% + Hyaluronic Acid 1%">Tretinoin + Niacinamide 4% + Hyaluronic Acid 1%</option>
+        <option value="Spironolactone 5% Foam">Spironolactone 5% Foam</option>
+        <option value="Minoxidil 5% Foam">Minoxidil 5% Foam</option>
+        <option value="Spironolactone 5% Lotion">Spironolactone 5% Lotion</option>
+      </select>
+
+      <label>Formula / Rx <span style="color:#5a8a9f;font-weight:400;text-transform:none;letter-spacing:0">(edit concentrations freely)</span></label>
+      <div style="position:relative">
+        <input id="f_formula" type="text" placeholder="Select a template above or type freely">
+        <div id="chip-bar" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+      </div>
+
       <label>Instructions</label>
-      <input id="f_instructions" type="text" placeholder="e.g. Use 1-2 pumps at night as directed" value="Use 1-2 pumps at night as directed">
-      <div class="row2">
+      <input id="f_instructions" type="text" value="Use 1-2 pumps at night as directed">
+
+      <div class="row2" style="margin-top:14px">
         <div>
           <label>Date of Compounding</label>
-          <input id="f_compound_date" type="text" placeholder="DD-MM-YYYY">
+          <input id="f_compound_date" type="text" placeholder="DD-MM-YYYY" readonly style="background:#e8f4fb;cursor:default">
         </div>
         <div>
-          <label>Expiry Date</label>
-          <input id="f_expiry" type="text" placeholder="DD-MM-YYYY">
+          <label>Expiry Date <span style="color:#5a8a9f;font-weight:400;text-transform:none;letter-spacing:0">(35 days)</span></label>
+          <input id="f_expiry" type="text" placeholder="DD-MM-YYYY" readonly style="background:#e8f4fb;cursor:default">
         </div>
       </div>
 
@@ -139,6 +166,80 @@ function parsePaste() {
   if (added) alert(added + ' prescription(s) imported.');
 }
 
+// ── DATE HELPERS ──
+function fmtDate(d) {
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  return dd+'-'+mm+'-'+yyyy;
+}
+function initDates() {
+  const today = new Date();
+  const expiry = new Date(today); expiry.setDate(expiry.getDate()+35);
+  document.getElementById('f_compound_date').value = fmtDate(today);
+  document.getElementById('f_expiry').value = fmtDate(expiry);
+}
+
+// ── CHIP / CONCENTRATION EDITOR ──
+let chipIngredients = [];
+
+function parseIngredients(formulaStr) {
+  // Split on ' + ' and extract name + concentration
+  return formulaStr.split(/\s*\+\s*/).map(part => {
+    const m = part.match(/^(.*?)\s*([\d.]+)%(.*)$/);
+    if (m) return { name: m[1].trim(), conc: parseFloat(m[2]), suffix: m[3].trim() };
+    return { name: part.trim(), conc: null, suffix: '' };
+  });
+}
+
+function ingredientsToFormula(arr) {
+  return arr.map(i => i.conc !== null ? i.name+' '+i.conc+'%'+(i.suffix?' '+i.suffix:'') : i.name).join(' + ');
+}
+
+function renderChips() {
+  const bar = document.getElementById('chip-bar');
+  if (!chipIngredients.length) { bar.innerHTML=''; return; }
+  bar.innerHTML = chipIngredients.map((ing, idx) => {
+    if (ing.conc === null) {
+      return `<span class="chip"><span class="chip-name">${ing.name}</span></span>`;
+    }
+    return `<span class="chip">
+      <span class="chip-name">${ing.name}</span>
+      <span class="chip-ctrl">
+        <button class="chip-btn" onclick="adjConc(${idx},-0.005)">−</button>
+        <span class="chip-val">${ing.conc.toFixed(3).replace(/\.?0+$/,'')}%</span>
+        <button class="chip-btn" onclick="adjConc(${idx},+0.005)">+</button>
+      </span>
+    </span>`;
+  }).join('');
+}
+
+function adjConc(idx, delta) {
+  let v = Math.round((chipIngredients[idx].conc + delta) * 1000) / 1000;
+  if (v < 0.001) v = 0.001;
+  chipIngredients[idx].conc = v;
+  const formula = ingredientsToFormula(chipIngredients);
+  document.getElementById('f_formula').value = formula;
+  renderChips();
+}
+
+function applyTemplate() {
+  const val = document.getElementById('f_template').value;
+  if (!val) return;
+  document.getElementById('f_formula').value = val;
+  chipIngredients = parseIngredients(val);
+  renderChips();
+}
+
+// sync chips when user types manually
+document.addEventListener('DOMContentLoaded', () => {
+  initDates();
+  document.getElementById('f_formula').addEventListener('input', function() {
+    chipIngredients = parseIngredients(this.value);
+    renderChips();
+  });
+});
+
 function addRow() {
   const name          = document.getElementById('f_name').value.trim();
   const age           = document.getElementById('f_age').value.trim();
@@ -148,7 +249,12 @@ function addRow() {
   const expiry        = document.getElementById('f_expiry').value.trim();
   if (!name || !formula) { alert('Patient name and formula are required.'); return; }
   prescriptions.push({ name, age, formula, instructions, compound_date, expiry, id: Date.now() });
-  ['f_name','f_age','f_formula','f_compound_date','f_expiry'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f_name').value = '';
+  document.getElementById('f_age').value = '';
+  document.getElementById('f_formula').value = '';
+  document.getElementById('f_template').value = '';
+  document.getElementById('chip-bar').innerHTML = '';
+  chipIngredients = [];
   renderTable();
 }
 
@@ -193,39 +299,34 @@ function buildPDF(p) {
   const W = 210, H = 297;
 
   // ── HEADER BAR ──
-  // Full-width navy bar
   doc.setFillColor(5,70,96);
-  doc.rect(0, 0, W, 34, 'F');
-  // Sky blue accent strip
+  doc.rect(0, 0, W, 32, 'F');
   doc.setFillColor(191,230,255);
-  doc.rect(0, 33, W, 1.5, 'F');
+  doc.rect(0, 31.5, W, 1.5, 'F');
 
-  // LEFT: Formial Labs logo + name + address
-  try { doc.addImage(LOGO_B64, 'PNG', 10, 5, 20, 18); } catch(e){}
-  doc.setTextColor(255,255,255);
-  doc.setFontSize(12); doc.setFont('helvetica','bold');
-  doc.text('FORMIAL LABS PHARMACY', 34, 13);
+  // LEFT: logo image only, then address below
+  try { doc.addImage(LOGO_B64, 'PNG', 10, 4, 42, 14); } catch(e){}
   doc.setFontSize(7); doc.setFont('helvetica','normal');
   doc.setTextColor(191,230,255);
-  doc.text('No. 181, K.B.A.R Road, Austin Town, Bengaluru – 560047', 34, 19);
-  doc.text('Tel: 6363991580  |  formial.in', 34, 24);
+  doc.text('No. 181, K.B.A.R Road, Austin Town, Bengaluru – 560047', 10, 23);
+  doc.text('Tel: 6363991580  |  formial.in', 10, 28);
 
-  // Thin vertical divider between left and right halves
+  // Thin vertical divider
   doc.setDrawColor(191,230,255);
   doc.setLineWidth(0.3);
-  doc.line(W/2, 4, W/2, 30);
+  doc.line(W/2, 4, W/2, 29);
 
-  // RIGHT: Dr Neha details
+  // RIGHT: Dr Neha details, vertically centred
   doc.setTextColor(255,255,255);
-  doc.setFontSize(13); doc.setFont('helvetica','bold');
-  doc.text('DR. NEHA FOGLA', W/2 + 6, 13);
+  doc.setFontSize(12); doc.setFont('helvetica','bold');
+  doc.text('DR. NEHA FOGLA', W/2 + 6, 12);
   doc.setFontSize(7.5); doc.setFont('helvetica','normal');
   doc.setTextColor(191,230,255);
   doc.text('MBBS MD (DERM)', W/2 + 6, 19);
-  doc.text('MMC Reg. No. 2021054683', W/2 + 6, 24);
+  doc.text('MMC Reg. No. 2021054683', W/2 + 6, 25);
 
   // ── PATIENT INFO ──
-  let y = 46;
+  let y = 44;
   doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(26,26,26);
   doc.text('Patient Name:', 14, y);
   doc.setFont('helvetica','bold');
@@ -234,9 +335,8 @@ function buildPDF(p) {
   doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
   doc.text('Date:', 150, y);
   doc.setFont('helvetica','bold'); doc.setTextColor(26,26,26);
-  doc.text(p.compound_date || '', 165, y);
+  doc.text(p.compound_date || '', 163, y);
 
-  // Divider
   doc.setDrawColor(191,230,255);
   doc.setLineWidth(0.4);
   doc.line(14, y+6, 196, y+6);
@@ -257,7 +357,7 @@ function buildPDF(p) {
   doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
   doc.text('Sig: ' + (p.instructions || ''), 18, y);
 
-  // ── SIGNATURE (no text below it) ──
+  // ── SIGNATURE ──
   const sigY = H - 65;
   try { doc.addImage(SIG_B64, 'PNG', 14, sigY, 65, 24); } catch(e){}
 
@@ -274,8 +374,8 @@ function buildPDF(p) {
   const safeDate = (p.compound_date||'').replace(/[^0-9\-]/g,'') || 'nodate';
   doc.save(safeName + '_' + safeDate + '.pdf');
 }
-
 renderTable();
+initDates();
 </script>
 </body>
 </html>
